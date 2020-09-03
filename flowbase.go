@@ -4,6 +4,20 @@ import (
 	"fmt"
 )
 
+var (
+	BUFSIZE = 128
+)
+
+// ----------------------------------------------------------------------------
+// IP
+// ----------------------------------------------------------------------------
+
+type IP interface{}
+
+type BaseIP struct {
+	data []byte
+}
+
 // ----------------------------------------------------------------------------
 // Port
 // ----------------------------------------------------------------------------
@@ -12,9 +26,18 @@ type Port interface {
 	Name() string
 }
 
+func NewBasePort(name string) *BasePort {
+	return &BasePort{
+		name:        name,
+		remotePorts: make(map[string]Port),
+		channel:     make(chan IP, BUFSIZE),
+	}
+}
+
 type BasePort struct {
 	name        string
 	remotePorts map[string]Port
+	channel     chan IP
 }
 
 func (bp *BasePort) Name() string {
@@ -46,15 +69,23 @@ func (ip *InPort) From(op *OutPort) {
 // ----------------------------------------------------------------------------
 
 func NewOutPort(name string) *OutPort {
-	return &OutPort{BasePort{name: name}}
+	return &OutPort{
+		BasePort: *NewBasePort(name),
+	}
 }
 
 type OutPort struct {
 	BasePort
 }
 
-func (op *OutPort) To(ip *OutPort) {
-	op.Connect(ip)
+func (op *OutPort) To(ipt *OutPort) {
+	op.Connect(ipt)
+}
+
+func (op *OutPort) Send(ip IP) {}
+
+func (op *OutPort) Close() {
+	close(op.channel)
 }
 
 // ----------------------------------------------------------------------------
@@ -68,14 +99,16 @@ type Process interface {
 
 func NewBaseProcess(name string) *BaseProcess {
 	return &BaseProcess{
-		name: name,
+		name:     name,
+		inPorts:  make(map[string]*InPort),
+		outPorts: make(map[string]*OutPort),
 	}
 }
 
 type BaseProcess struct {
 	name     string
-	inPorts  map[string]InPort
-	outPorts map[string]OutPort
+	inPorts  map[string]*InPort
+	outPorts map[string]*OutPort
 }
 
 func (bp *BaseProcess) Name() string {
@@ -95,6 +128,8 @@ type Network interface {
 func NewBaseNetwork(name string) *BaseNetwork {
 	return &BaseNetwork{
 		BaseProcess: *NewBaseProcess(name),
+		processes:   []Process{},
+		sink:        NewBaseProcess("sink"),
 	}
 }
 
@@ -102,6 +137,10 @@ type BaseNetwork struct {
 	BaseProcess
 	processes []Process
 	sink      Process
+}
+
+func (n *BaseNetwork) Add(p Process) {
+	n.processes = append(n.processes, p)
 }
 
 func (n *BaseNetwork) Run() {
